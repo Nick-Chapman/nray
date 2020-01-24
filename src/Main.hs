@@ -1,19 +1,12 @@
 
 module Main (main) where
 
-import System.Environment (getArgs)
-
 main :: IO ()
-main = do
-  getArgs >>= \case
-    -- ["--something"] -> run
-    _ -> run
+main = run
 
 run :: IO ()
 run = do
-  putStrLn "nray"
   let size = Size (1024,768)
-  --let size = Size (300,200)
   let _ = writeImage "six.ppm" sixPixelImage
   let _ = writeImage "gradient.ppm" $ gradientImage size
   writeImage "scene.ppm" $ renderScene size scene1
@@ -46,12 +39,12 @@ instance Show RGB where
   show (RGB (r,g,b)) = unwords [show r, show g, show b]
 
 
-newtype Intensity = Intensity Double -- 0..1
+newtype Intensity = Intensity Double -- 0..
 mkIntensity :: Double -> Intensity
-mkIntensity d = if d < 0.0 || d >= 1.0 then error $ "mkIntensity: " <> show d else Intensity d
+mkIntensity d = if d < 0.0 then error $ "mkIntensity: " <> show d else Intensity d
 
 one,zero :: Intensity
-one = mkIntensity 0.99999
+one = mkIntensity 1.0
 zero = mkIntensity 0.0
 
 newtype Col = Col (Intensity,Intensity,Intensity) --rgb
@@ -72,7 +65,7 @@ quantizeCol (Col (r,g,b)) = RGB (quantizeIntensity r, quantizeIntensity g, quant
 
 quantizeIntensity :: Intensity -> Byte
 quantizeIntensity (Intensity f) = mkByte n where
-  n = truncate (f * 256)
+  n = min 255 $ truncate (f * 256)
 
 newtype Image = Image [[Col]]
 
@@ -141,11 +134,12 @@ renderMaybeHit = \case
   Nothing -> bgColour
   Just Hit {material = Material surfaceCol, hit = Point hitPoint, norm = Direction (Norm surfaceNorm)} -> do
     let lightDir :: Vec3f = normalise (subVec lightPos hitPoint)
-    let lighIntensity :: Intensity = mkIntensity $ (brightness*) $ abs $ dotProduct lightDir surfaceNorm
-    attenuateColour lighIntensity surfaceCol
+    let lightIntensity :: Intensity = mkIntensity $ (brightness*) $ clamp $ dotProduct lightDir surfaceNorm
+    attenuateColour lightIntensity surfaceCol
       where
+        clamp = max 0 --abs
         lightPos = Vec3f (-20, 20, 20)
-        brightness = 1.0 --1.5 (this can cause intensity>1)
+        brightness = 1.5 -- causes intensity>1
 
 attenuateColour :: Intensity -> Col -> Col
 attenuateColour a (Col (r,g,b)) = Col (mulI a r, mulI a g, mulI a b)
