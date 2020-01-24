@@ -14,9 +14,9 @@ run = do
   putStrLn "nray"
   let size = Size (1024,768)
   --let size = Size (300,200)
-  writeImage "six.ppm" sixPixelImage
-  writeImage "gradient.ppm" $ gradientImage size
-  writeImage "step2.ppm" $ renderScene size scene1
+  let _ = writeImage "six.ppm" sixPixelImage
+  let _ = writeImage "gradient.ppm" $ gradientImage size
+  writeImage "scene.ppm" $ renderScene size scene1
 
 writeImage :: FilePath -> Image -> IO ()
 writeImage path image = do
@@ -97,7 +97,8 @@ gradientImage (Size (width,height)) =
 newtype Scene = Scene [Surface]
 newtype Surface = Surface (Ray -> Maybe Hit)
 data Ray = Ray Point Direction
-data Hit = Hit -- here we will add things like the distance to hit & the normal. but for now it just unit
+data Hit = Hit { distance :: Double, material :: Material }
+data Material = Material Col
 
 newtype Pixel = Pixel (Int,Int) -- i(x), j(y)
 newtype Norm = Norm Vec3f
@@ -105,11 +106,20 @@ newtype Point = Point Vec3f
 newtype Direction = Direction Norm
 
 scene1 :: Scene
-scene1 = Scene [ sphere (mkPoint (-3,0,-16)) 2 ]
+scene1 = Scene
+  [ sphere (mkPoint (-3,   0,  -16)) 2 ivory
+  , sphere (mkPoint (-1,  -1.5,-12)) 2 redRubber
+  , sphere (mkPoint ( 1.5,-0.5,-18)) 3 redRubber
+  , sphere (mkPoint ( 7,   5,  -18)) 4 ivory
+  ]
+
+ivory,redRubber :: Material
+ivory     = Material $ Col(mkIntensity 0.4, mkIntensity 0.4, mkIntensity 0.3)
+redRubber = Material $ Col(mkIntensity 0.3, mkIntensity 0.1, mkIntensity 0.1)
 
 renderScene :: Size -> Scene -> Image
 renderScene size@(Size (width,height)) scene =
-  Image $ [ [colourAtPixel (Pixel (i,j)) | i <- [0..width-1]] | j <- [0..height-1] ]
+  Image $ reverse $ [ [colourAtPixel (Pixel (i,j)) | i <- [0..width-1]] | j <- [0..height-1] ]
   where
     colourAtPixel :: Pixel -> Col
     colourAtPixel pixel = renderMaybeHit $ castRayScene (eyeRay size pixel) scene
@@ -124,15 +134,14 @@ combineMaybeHits mhs =
     hits -> Just $ foldl1 combineHit hits
 
 combineHit :: Hit -> Hit -> Hit -- This will get more complicated when we need to know which surface we hit
-combineHit Hit Hit = Hit
+combineHit h1@Hit{distance=d1} h2@Hit{distance=d2} = if d1 < d2 then h1 else h2
 
 renderMaybeHit :: Maybe Hit -> Col
 renderMaybeHit = \case
-  Just _ -> obColour
+  Just Hit {material = Material col} -> col
   Nothing -> bgColour
 
-bgColour,obColour :: Col
-obColour = Col (mkIntensity 0.4, mkIntensity 0.4, mkIntensity 0.3)
+bgColour :: Col
 bgColour = Col (mkIntensity 0.2, mkIntensity 0.7, mkIntensity 0.8)
 
 eyeRay :: Size -> Pixel -> Ray
@@ -160,8 +169,8 @@ normalise (Vec3f (x,y,z)) = Vec3f(x',y',z') where
   z' = z / len
   len = sqrt (x*x + y*y + z*z)
 
-sphere :: Point -> Double -> Surface
-sphere (Point center) radius = do
+sphere :: Point -> Double -> Material -> Surface
+sphere (Point center) radius material = do
   Surface $ \(Ray (Point orig) (Direction (Norm dir))) -> do
     let l :: Vec3f = subVec center orig
     let tca :: Double = dotProduct l dir
@@ -172,8 +181,8 @@ sphere (Point center) radius = do
       let t0  :: Double = tca - thc
       let t1  :: Double = tca + thc
       if t0 < 0
-        then if t1 < 0 then Nothing else Just Hit
-        else Just Hit
+        then if t1 < 0 then Nothing else Just Hit { distance = t0, material }
+        else Just Hit { distance = t0, material }
 
 newtype Vec3f = Vec3f (Double,Double,Double) --xyz
 
