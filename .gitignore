@@ -1,0 +1,6 @@
+.stack-work
+*.cabal
+*~
+.markdown-preview.html
+stack.yaml.lock
+*.ppm
