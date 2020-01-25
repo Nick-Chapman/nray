@@ -1,6 +1,6 @@
 
 module Render(
-  World(..), Lighting(..), Light(..), Scene(..), Surface(..), Material(..),
+  World(..), Light(..), Surface(..), Material(..),
   Col, col,
   Vec, vec,
   Size(..),
@@ -11,18 +11,11 @@ module Render(
 import Data.Maybe as Maybe (isJust)
 import Data.Word (Word8)
 
-data Size = Size { width :: Int, height :: Int }
-newtype Image = Image [[Col]]
-newtype Pixel = Pixel (Int,Int)
-
 data World = World
-  { lighting :: Lighting
-  , scene :: Scene
+  { lights :: [Light]
+  , surfaces :: [Surface]
   , bgColour :: Col
   }
-
-newtype Lighting = Lighting [Light]
-newtype Scene = Scene [Surface]
 
 data Light = Light { position :: Vec, brightness :: Double }
 
@@ -45,15 +38,18 @@ data Material = Material
   , specExponent :: Double
   }
 
-renderWorld :: Size -> World -> Image
-renderWorld size World{lighting,scene,bgColour} = renderScene size bgColour lighting scene
+data Size = Size { width :: Int, height :: Int }
 
-renderScene :: Size -> Col -> Lighting -> Scene -> Image
-renderScene size@Size{width,height} bgColour lighting scene =
+newtype Image = Image [[Col]]
+
+renderWorld :: World -> Size -> Image
+renderWorld world size@Size{width,height} =
   Image $ reverse $ [ [colourAtPixel (Pixel (i,j)) | i <- [0..width-1]] | j <- [0..height-1] ]
   where
     colourAtPixel :: Pixel -> Col
-    colourAtPixel pixel = castRay 0 (eyeRay size pixel) bgColour lighting scene
+    colourAtPixel pixel = castRay world 0 (eyeRay size pixel)
+
+newtype Pixel = Pixel (Int,Int)
 
 eyeRay :: Size -> Pixel -> Ray
 eyeRay Size{width,height} (Pixel (i,j)) = Ray {orig,direction} where
@@ -64,11 +60,47 @@ eyeRay Size{width,height} (Pixel (i,j)) = Ray {orig,direction} where
   z = float $ - (width-1) -- this should give a 90 degree horizonal field of view
   float = fromIntegral
 
-castRay :: Int -> Ray -> Col -> Lighting -> Scene -> Col
-castRay depth ray bgColour lighting scene = renderMaybeHit depth ray bgColour lighting scene $ hitsScene ray scene
+castRay :: World -> Int -> Ray -> Col
+castRay world@World{lights,surfaces,bgColour} depth ray@Ray{direction=lookDir} =
+  case hitsScene ray surfaces of
+    Nothing -> bgColour
+    Just Hit
+      { hitPoint
+      , material = Material {surfaceCol,diffAlbedo,reflAlbedo,specAlbedo,specExponent}
+      , surfaceNorm
+      } -> do
 
-hitsScene :: Ray -> Scene -> Maybe Hit
-hitsScene ray (Scene surfaces) = combineMaybeHits (map (hitsSurface ray) surfaces)
+      let reflDir = reflect lookDir surfaceNorm
+      let reflOrig = addVec hitPoint (scaleVec eps reflDir) where eps = 0.0001
+      let reflRay = Ray reflOrig reflDir
+
+      let reflColour =
+            if depth > cutoffDepth || reflAlbedo == 0 then black else
+              attenuateColour reflAlbedo $ castRay world (depth+1) reflRay
+            where
+              cutoffDepth = 4
+
+      let colours = reflColour : map colourFromLight lights
+      sumColours colours
+      where
+        colourFromLight :: Light -> Col
+        colourFromLight Light{position,brightness} = do
+
+          let lightDir = normalise (subVec position hitPoint)
+          let diffComponent = clampPositve (dotProduct lightDir surfaceNorm)
+          let specComponent = clampPositve (dotProduct (reflect lightDir surfaceNorm) lookDir) ** specExponent
+
+          let shadowOrig = addVec hitPoint (scaleVec eps lightDir) where eps = 0.0001
+          let shadowRay = Ray shadowOrig lightDir
+          let inShadow = Maybe.isJust $ hitsScene shadowRay surfaces
+
+          if inShadow then black else
+            addColour
+            (attenuateColour (brightness * diffComponent * diffAlbedo) surfaceCol)
+            (attenuateColour (brightness * specComponent * specAlbedo) white)
+
+hitsScene :: Ray -> [Surface] -> Maybe Hit
+hitsScene ray surfaces = combineMaybeHits (map (hitsSurface ray) surfaces)
 
 hitsSurface :: Ray -> Surface -> Maybe Hit
 hitsSurface (Ray orig lookDir) = \case
@@ -101,45 +133,6 @@ combineMaybeHits mhs =
 
 combineHit :: Hit -> Hit -> Hit
 combineHit h1@Hit{distance=d1} h2@Hit{distance=d2} = if d1 < d2 then h1 else h2
-
-renderMaybeHit :: Int -> Ray -> Col -> Lighting -> Scene -> Maybe Hit -> Col
-renderMaybeHit depth ray bgColour lighting scene = \case
-  Nothing -> bgColour
-  Just Hit { material = Material {surfaceCol,diffAlbedo,reflAlbedo,specAlbedo,specExponent}
-           , hitPoint
-           , surfaceNorm
-           } -> do
-
-    let reflDir = reflect lookDir surfaceNorm
-    let reflOrig = addVec hitPoint (scaleVec eps reflDir) where eps = 0.0001
-    let reflRay = Ray reflOrig reflDir
-
-    let reflColour =
-          if depth > cutoffDepth || reflAlbedo == 0 then black else
-            attenuateColour reflAlbedo $ castRay (depth+1) reflRay bgColour lighting scene
-          where
-            cutoffDepth = 4
-
-    let colours = reflColour : map colourFromLight lights where (Lighting lights) = lighting
-    sumColours colours
-    where
-      Ray _ lookDir = ray
-
-      colourFromLight :: Light -> Col
-      colourFromLight light = do
-        let Light { position = lightPos, brightness } = light
-        let lightDir = normalise (subVec lightPos hitPoint)
-        let diffComponent = clampPositve (dotProduct lightDir surfaceNorm)
-        let specComponent = clampPositve (dotProduct (reflect lightDir surfaceNorm) lookDir) ** specExponent
-
-        let shadowOrig = addVec hitPoint (scaleVec eps lightDir) where eps = 0.0001
-        let shadowRay = Ray shadowOrig lightDir
-        let inShadow = Maybe.isJust $ hitsScene shadowRay scene
-
-        if inShadow then black else
-          addColour
-          (attenuateColour (brightness * diffComponent * diffAlbedo) surfaceCol)
-          (attenuateColour (brightness * specComponent * specAlbedo) white)
 
 clampPositve :: Double -> Double
 clampPositve = max 0
