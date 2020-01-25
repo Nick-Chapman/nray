@@ -2,6 +2,7 @@
 module Main (main) where
 
 import Data.Maybe as Maybe (isJust)
+import Data.Word (Word8)
 
 main :: IO ()
 main = run
@@ -93,12 +94,10 @@ redRubber     = rubber $ col (0.3, 0.1, 0.1)
 _yellowRubber = rubber $ col (0.5, 0.5, 0)
 
 
-type Intensity = Double -- >=0
-
 newtype Lighting = Lighting [Light]
 newtype Scene = Scene [Surface]
 
-data Light = Light { position :: Vec, brightness :: Intensity }
+data Light = Light { position :: Vec, brightness :: Double }
 
 data Surface = Sphere { center :: Vec, radius :: Double, madeof :: Material }
 
@@ -113,9 +112,9 @@ data Hit = Hit
 
 data Material = Material
   { surfaceCol :: Col
-  , diffAlbedo :: Intensity -- diffuse
-  , specAlbedo :: Intensity -- specular
-  , reflAlbedo :: Intensity -- reflective
+  , diffAlbedo :: Double -- diffuse
+  , specAlbedo :: Double -- specular
+  , reflAlbedo :: Double -- reflective
   , specExponent :: Double
   }
 
@@ -247,9 +246,9 @@ normalise (Vec x y z) = vec (x',y',z') where
 
 ----------------------------------------------------------------------
 
-data Col = Col {r :: !Intensity, g :: !Intensity, b :: !Intensity}
+data Col = Col {r :: !Double, g :: !Double, b :: !Double}
 
-col :: (Intensity,Intensity,Intensity) -> Col
+col :: (Double,Double,Double) -> Col
 col (r,g,b) = Col {r,g,b}
 
 red,green,blue,yellow,white,black :: Col
@@ -263,7 +262,7 @@ black  = col (0, 0, 0)
 sumColours :: [Col] -> Col
 sumColours = foldl1 addColour
 
-attenuateColour :: Intensity -> Col -> Col
+attenuateColour :: Double -> Col -> Col
 attenuateColour a (Col r g b) = col (a * r, a * g, a * b)
 
 addColour :: Col -> Col -> Col
@@ -274,18 +273,10 @@ quantizeCol (Col r g b) = RGB (quantize r, quantize g, quantize b)
 
 ----------------------------------------------------------------------
 
-newtype Byte = Byte Int -- 0,255
+quantize :: Double -> Word8
+quantize f = fromIntegral n where n :: Int = min 255 $ truncate (f * 256)
 
-mkByte :: Int -> Byte
-mkByte n = if n < 0 || n > 255 then error $ "mkByte: " <> show n else Byte n
-
-quantize :: Intensity -> Byte
-quantize f = mkByte n where
-  n = min 255 $ truncate (f * 256)
-
-instance Show Byte where show (Byte n) = show n
-
-newtype RGB = RGB (Byte,Byte,Byte) --rgb
+newtype RGB = RGB (Word8,Word8,Word8)
 newtype PPM = PPM [[RGB]]
 
 instance Show PPM where
