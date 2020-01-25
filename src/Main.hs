@@ -1,12 +1,22 @@
 
 module Main (main) where
 
+import System.Environment (getArgs)
 import Render
 
 main :: IO ()
 main = do
+  version <- parse <$> getArgs
   let size = Size 1024 768
-  writeImage "scene.ppm" $ renderWorld world size
+  writeImage "scene.ppm" $ renderWorld (world version) size
+
+data Version = TinyRayTraceTutorial | MyChanges deriving Eq
+
+parse :: [String] -> Version
+parse = \case
+  ["--tut"] -> TinyRayTraceTutorial
+  [] -> MyChanges
+  args -> error (show args)
 
 writeImage :: FilePath -> Image -> IO ()
 writeImage path image = do
@@ -14,8 +24,8 @@ writeImage path image = do
   putStrLn $ "writing: " <> path
   writeFile path ppm
 
-world :: World
-world = World
+world :: Version -> World
+world version = World
   { bgColour = col (0.2, 0.7, 0.8)
   , lights =
     [ Light { position = vec (-20, 20,  20), brightness = 1.5 }
@@ -27,7 +37,8 @@ world = World
     , Sphere { center = vec (-1,   -1.5, -12), radius = 2,   madeof = mirror }
     , Sphere { center = vec ( 1.5, -0.5, -18), radius = 3,   madeof = redRubber }
     , Sphere { center = vec ( 7,    5,   -18), radius = 4,   madeof = mirror }
-    , Sphere { center = vec ( 0,   -1000, 0 ), radius = 995, madeof = yellowRubber }
+    ] ++ [
+      Sphere { center = vec ( 0,   -1000, 0 ), radius = 995, madeof = yellowRubber } | version == MyChanges
     ]
   }
 
