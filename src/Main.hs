@@ -86,6 +86,10 @@ gradientImage (Size (width,height)) =
   where
     float = fromIntegral
 
+bgColour :: Col
+--bgColour = Col (mkIntensity 0.2, mkIntensity 0.7, mkIntensity 0.8)
+bgColour = Col (mkIntensity 0.1, mkIntensity 0.1, mkIntensity 0.1)
+
 lighting1 :: Lighting
 lighting1 = Lighting
   [ Light { position = mkPoint (-20, 20,  20), brightness = mkIntensity 1.5 }
@@ -96,9 +100,9 @@ lighting1 = Lighting
 scene1 :: Scene
 scene1 = Scene
   [ sphere (mkPoint (-3,   0,  -16)) 2 ivory
-  , sphere (mkPoint (-1,  -1.5,-12)) 2 redRubber
+  , sphere (mkPoint (-1,  -1.5,-12)) 2 mirror --redRubber
   , sphere (mkPoint ( 1.5,-0.5,-18)) 3 redRubber
-  , sphere (mkPoint ( 7,   5,  -18)) 4 ivory
+  , sphere (mkPoint ( 7,   5,  -18)) 4 mirror --ivory
   , sphere (mkPoint ( 0,  -1000,0)) 995 _yellowRubber
   ]
 
@@ -108,22 +112,30 @@ ivory = Material
   { surfaceCol = Col(mkIntensity 0.4, mkIntensity 0.4, mkIntensity 0.3)
   , diffAlbedo = mkIntensity 0.6
   , specAlbedo = mkIntensity 0.3
+  , reflAlbedo = mkIntensity 0.1
   , specExponent = 50
   }
 
-redRubber = Material
-  { surfaceCol = Col(mkIntensity 0.3, mkIntensity 0.1, mkIntensity 0.1)
+rubber :: Col -> Material
+rubber surfaceCol = Material
+  { surfaceCol
   , diffAlbedo = mkIntensity 0.9
   , specAlbedo = mkIntensity 0.1
+  , reflAlbedo = mkIntensity 0
   , specExponent = 10
   }
 
-_yellowRubber = Material
-  { surfaceCol = Col(mkIntensity 0.5, mkIntensity 0.5, mkIntensity 0)
-  , diffAlbedo = mkIntensity 0.9
-  , specAlbedo = mkIntensity 0.1
-  , specExponent = 10
+mirror :: Material
+mirror = Material
+  { surfaceCol = white
+  , diffAlbedo = mkIntensity 0
+  , specAlbedo = mkIntensity 10
+  , reflAlbedo = mkIntensity 0.6
+  , specExponent = 1425
   }
+
+redRubber     = rubber $ Col(mkIntensity 0.3, mkIntensity 0.1, mkIntensity 0.1)
+_yellowRubber = rubber $ Col(mkIntensity 0.5, mkIntensity 0.5, mkIntensity 0)
 
 newtype Lighting = Lighting [Light]
 data Light = Light { position :: Point, brightness :: Intensity }
@@ -143,6 +155,7 @@ data Material = Material -- diff=diffuse, spec=specular
   { surfaceCol :: Col
   , diffAlbedo :: Intensity --0..1
   , specAlbedo :: Intensity --0..1
+  , reflAlbedo :: Intensity --0..1
   , specExponent :: Double
   }
 
@@ -156,8 +169,10 @@ renderScene size@(Size (width,height)) lighting scene =
   Image $ reverse $ [ [colourAtPixel (Pixel (i,j)) | i <- [0..width-1]] | j <- [0..height-1] ]
   where
     colourAtPixel :: Pixel -> Col
-    colourAtPixel pixel = renderMaybeHit lighting scene ray $ castRayScene ray scene where
-      ray = eyeRay size pixel
+    colourAtPixel pixel = castRay 0 (eyeRay size pixel) lighting scene
+
+castRay :: Int -> Ray -> Lighting -> Scene -> Col
+castRay depth ray lighting scene = renderMaybeHit depth ray lighting scene $ castRayScene ray scene
 
 castRayScene :: Ray -> Scene -> Maybe Hit
 castRayScene ray (Scene surfaces) = combineMaybeHits [ f ray | Surface f <- surfaces ]
@@ -171,14 +186,26 @@ combineMaybeHits mhs =
 combineHit :: Hit -> Hit -> Hit
 combineHit h1@Hit{distance=d1} h2@Hit{distance=d2} = if d1 < d2 then h1 else h2
 
-renderMaybeHit :: Lighting -> Scene -> Ray -> Maybe Hit -> Col
-renderMaybeHit (Lighting lights) scene ray = \case
+renderMaybeHit :: Int -> Ray -> Lighting -> Scene -> Maybe Hit -> Col
+renderMaybeHit depth ray lighting scene = \case
   Nothing -> bgColour
-  Just Hit { material = Material {surfaceCol,diffAlbedo,specAlbedo,specExponent}
+  Just Hit { material = Material {surfaceCol,diffAlbedo,reflAlbedo,specAlbedo,specExponent}
            , hitPoint = Point hitPoint
            , surfaceNorm = Direction (Norm surfaceNorm)
-           } ->
-    foldl1 addColour (map colourFromLight lights)
+           } -> do
+
+    let reflDir = reflect lookDir surfaceNorm
+    let reflOrig = addVec hitPoint (scaleVec eps reflDir) where eps = 0.0001
+    let reflRay = Ray (Point reflOrig) (Direction (Norm reflDir))
+
+    let reflColour =
+          if depth > cutoffDepth then black else
+            attenuateColour reflAlbedo $ castRay (depth+1) reflRay lighting scene
+          where
+            cutoffDepth = 4
+
+    let colours = reflColour : map colourFromLight lights where (Lighting lights) = lighting
+    sumColours colours
     where
       Ray _ (Direction (Norm lookDir)) = ray
 
@@ -210,6 +237,9 @@ reflect incidence surfaceNorm =
 attenuateColour :: Intensity -> Col -> Col
 attenuateColour a (Col (r,g,b)) = Col (mulI a r, mulI a g, mulI a b)
 
+sumColours :: [Col] -> Col
+sumColours = foldl1 addColour --black
+
 addColour :: Col -> Col -> Col
 addColour (Col (r,g,b)) (Col (r',g',b')) = Col (addI r r', addI g g', addI b b')
 
@@ -218,9 +248,6 @@ mulI (Intensity a) (Intensity b) = Intensity (a*b)
 
 addI :: Intensity -> Intensity -> Intensity
 addI (Intensity a) (Intensity b) = Intensity (a+b)
-
-bgColour :: Col
-bgColour = Col (mkIntensity 0.2, mkIntensity 0.7, mkIntensity 0.8)
 
 eyeRay :: Size -> Pixel -> Ray
 eyeRay (Size (width,height)) (Pixel (i,j)) = Ray origin direction where
