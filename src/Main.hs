@@ -1,6 +1,8 @@
 
 module Main (main) where
 
+import Data.Maybe as Maybe (isJust)
+
 main :: IO ()
 main = run
 
@@ -97,9 +99,10 @@ scene1 = Scene
   , sphere (mkPoint (-1,  -1.5,-12)) 2 redRubber
   , sphere (mkPoint ( 1.5,-0.5,-18)) 3 redRubber
   , sphere (mkPoint ( 7,   5,  -18)) 4 ivory
+  , sphere (mkPoint ( 0,  -1000,0)) 995 _yellowRubber
   ]
 
-ivory,redRubber :: Material
+ivory,redRubber,_yellowRubber :: Material
 
 ivory = Material
   { surfaceCol = Col(mkIntensity 0.4, mkIntensity 0.4, mkIntensity 0.3)
@@ -110,6 +113,13 @@ ivory = Material
 
 redRubber = Material
   { surfaceCol = Col(mkIntensity 0.3, mkIntensity 0.1, mkIntensity 0.1)
+  , diffAlbedo = mkIntensity 0.9
+  , specAlbedo = mkIntensity 0.1
+  , specExponent = 10
+  }
+
+_yellowRubber = Material
+  { surfaceCol = Col(mkIntensity 0.5, mkIntensity 0.5, mkIntensity 0)
   , diffAlbedo = mkIntensity 0.9
   , specAlbedo = mkIntensity 0.1
   , specExponent = 10
@@ -146,7 +156,7 @@ renderScene size@(Size (width,height)) lighting scene =
   Image $ reverse $ [ [colourAtPixel (Pixel (i,j)) | i <- [0..width-1]] | j <- [0..height-1] ]
   where
     colourAtPixel :: Pixel -> Col
-    colourAtPixel pixel = renderMaybeHit lighting ray $ castRayScene ray scene where
+    colourAtPixel pixel = renderMaybeHit lighting scene ray $ castRayScene ray scene where
       ray = eyeRay size pixel
 
 castRayScene :: Ray -> Scene -> Maybe Hit
@@ -161,8 +171,8 @@ combineMaybeHits mhs =
 combineHit :: Hit -> Hit -> Hit
 combineHit h1@Hit{distance=d1} h2@Hit{distance=d2} = if d1 < d2 then h1 else h2
 
-renderMaybeHit :: Lighting -> Ray -> Maybe Hit -> Col
-renderMaybeHit (Lighting lights) ray = \case
+renderMaybeHit :: Lighting -> Scene -> Ray -> Maybe Hit -> Col
+renderMaybeHit (Lighting lights) scene ray = \case
   Nothing -> bgColour
   Just Hit { material = Material {surfaceCol,diffAlbedo,specAlbedo,specExponent}
            , hitPoint = Point hitPoint
@@ -180,7 +190,13 @@ renderMaybeHit (Lighting lights) ray = \case
         let specComponent = clampPositve (dotProduct (reflect lightDir surfaceNorm) lookDir) ** specExponent
         let diffLightIntensity = mkIntensity $ (brightness*) $ diffComponent
         let specLightIntensity = mkIntensity $ (brightness*) $ specComponent
-        addColour
+
+        let shadowOrig = addVec hitPoint (scaleVec eps lightDir) where eps = 0.0001
+        let shadowRay = Ray (Point shadowOrig) (Direction (Norm lightDir))
+        let inShadow = Maybe.isJust $ castRayScene shadowRay scene
+
+        if inShadow then black else
+          addColour
           (attenuateColour (mulI diffLightIntensity diffAlbedo) surfaceCol)
           (attenuateColour (mulI specLightIntensity specAlbedo) white)
 
