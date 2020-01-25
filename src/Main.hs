@@ -8,6 +8,7 @@ main = run
 
 run :: IO ()
 run = do
+  --let size = Size (1600,1000)
   let size = Size (1024,768)
   --let size = Size (512,384)
   let _ = writeImage "six.ppm" sixPixelImage
@@ -40,7 +41,7 @@ instance Show PPM where
 instance Show RGB where
   show (RGB (r,g,b)) = unwords [show r, show g, show b]
 
-newtype Intensity = Intensity Double -- 0..
+newtype Intensity = Intensity Double deriving Eq -- 0..
 mkIntensity :: Double -> Intensity
 mkIntensity d = if d < 0.0 then error $ "mkIntensity: " <> show d else Intensity d
 
@@ -199,7 +200,7 @@ renderMaybeHit depth ray lighting scene = \case
     let reflRay = Ray (Point reflOrig) (Direction (Norm reflDir))
 
     let reflColour =
-          if depth > cutoffDepth then black else
+          if depth > cutoffDepth || reflAlbedo == zero then black else
             attenuateColour reflAlbedo $ castRay (depth+1) reflRay lighting scene
           where
             cutoffDepth = 4
