@@ -35,7 +35,9 @@ data Material = Material
   , diffAlbedo :: Double -- diffuse
   , specAlbedo :: Double -- specular
   , reflAlbedo :: Double -- reflective
+  , refrAlbedo :: Double -- refractive
   , specExponent :: Double
+  , refractiveIndex :: Double
   }
 
 data Size = Size { width :: Int, height :: Int }
@@ -66,21 +68,33 @@ castRay world@World{lights,surfaces,bgColour} depth ray@Ray{direction=lookDir} =
     Nothing -> bgColour
     Just Hit
       { hitPoint
-      , material = Material {surfaceCol,diffAlbedo,reflAlbedo,specAlbedo,specExponent}
+      , material = Material {surfaceCol,
+                             diffAlbedo,reflAlbedo,refrAlbedo,specAlbedo,
+                             specExponent,refractiveIndex}
       , surfaceNorm
       } -> do
 
-      let reflDir = reflect lookDir surfaceNorm
-      let reflOrig = addVec hitPoint (scaleVec eps reflDir) where eps = 0.0001
-      let reflRay = Ray reflOrig reflDir
+      let reflectDir = reflect lookDir surfaceNorm
+      let reflectOrig = addVec hitPoint (scaleVec eps reflectDir) where eps = 0.0001
+      let reflectRay = Ray reflectOrig reflectDir
 
-      let reflColour =
+      let reflectColour =
             if depth > cutoffDepth || reflAlbedo == 0 then black else
-              attenuateColour reflAlbedo $ castRay world (depth+1) reflRay
+              attenuateColour reflAlbedo $ castRay world (depth+1) reflectRay
             where
               cutoffDepth = 4
 
-      let colours = reflColour : map colourFromLight lights
+      let refractDir = normalise (refract lookDir surfaceNorm refractiveIndex)
+      let refractOrig = addVec hitPoint (scaleVec eps refractDir) where eps = 0.0001
+      let refractRay = Ray refractOrig refractDir
+
+      let refractColour =
+            if depth > cutoffDepth || refrAlbedo == 0 then black else
+              attenuateColour refrAlbedo $ castRay world (depth+1) refractRay
+            where
+              cutoffDepth = 4
+
+      let colours = [reflectColour,refractColour] ++ map colourFromLight lights
       sumColours colours
       where
         colourFromLight :: Light -> Col
@@ -140,6 +154,16 @@ clampPositve = max 0
 reflect :: Vec -> Vec -> Vec
 reflect incidence surfaceNorm =
   subVec incidence (scaleVec ( 2 * dotProduct incidence surfaceNorm) surfaceNorm)
+
+refract :: Vec -> Vec -> Double -> Vec -- Snell's law
+refract incidence surfaceNorm refractiveIndex = do
+  let dp = - (max (-1) (min 1 (dotProduct incidence surfaceNorm)))
+  let (eta,norm,cosi) =
+        if dp < 0
+        then (refractiveIndex, scaleVec (-1) surfaceNorm, -dp)
+        else (1 / refractiveIndex, surfaceNorm, dp)
+  let k = 1 - eta*eta * (1 - cosi*cosi)
+  addVec (scaleVec eta incidence) (scaleVec (eta * cosi - sqrt k) norm)
 
 -------------------------------------------------------------------------------
 

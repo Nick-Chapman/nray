@@ -34,7 +34,7 @@ world version = World
     ]
   , surfaces =
     [ Sphere { center = vec (-3,    0,   -16), radius = 2,   madeof = ivory }
-    , Sphere { center = vec (-1,   -1.5, -12), radius = 2,   madeof = mirror }
+    , Sphere { center = vec (-1,   -1.5, -12), radius = 2,   madeof = glass }
     , Sphere { center = vec ( 1.5, -0.5, -18), radius = 3,   madeof = redRubber }
     , Sphere { center = vec ( 7,    5,   -18), radius = 4,   madeof = mirror }
     ] ++ [
@@ -49,7 +49,9 @@ ivory = Material
   , diffAlbedo = 0.6
   , specAlbedo = 0.3
   , reflAlbedo = 0.1
+  , refrAlbedo = 0
   , specExponent = 50
+  , refractiveIndex = 1
   }
 
 redRubber    = rubber $ col (0.3, 0.1, 0.1)
@@ -61,7 +63,9 @@ rubber surfaceCol = Material
   , diffAlbedo = 0.9
   , specAlbedo = 0.1
   , reflAlbedo = 0
+  , refrAlbedo = 0
   , specExponent = 10
+  , refractiveIndex = 1
   }
 
 mirror :: Material
@@ -70,7 +74,20 @@ mirror = Material
   , diffAlbedo = 0
   , specAlbedo = 10
   , reflAlbedo = 0.6
+  , refrAlbedo = 0
   , specExponent = 1425
+  , refractiveIndex = 1
+  }
+
+glass :: Material
+glass = Material
+  { surfaceCol = col (0.6, 0.7, 0.8)
+  , diffAlbedo = 0
+  , specAlbedo = 0.5
+  , reflAlbedo = 0.1
+  , refrAlbedo = 0.8
+  , specExponent = 125
+  , refractiveIndex = 1.5
   }
 
 white :: Col
