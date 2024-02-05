@@ -4,7 +4,7 @@ description:         Play with ray tracing
 license:             BSD3
 author:              Nick Chapman
 maintainer:          nic@amadido.co.uk
-github:              https://github.com/Nick-Chapman/nray.git
+github:              Nick-Chapman/nray.git
 
 extra-source-files:
 - README.md
